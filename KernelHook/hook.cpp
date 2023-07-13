@@ -36,5 +36,51 @@ bool ztrunkhook::CallKernel(void* kernel_function_address)
 
 NTSTATUS ztrunkhook::Handle(PVOID called_param)
 {
+	NULL_MEMORY* instructions = (NULL_MEMORY*)called_param;
+
+	if (instructions->req_base != FALSE)
+	{
+		ANSI_STRING AS;
+		UNICODE_STRING ModuleName;
+
+		RtlInitAnsiString(&AS, instructions->module_name);
+		RtlAnsiStringToUnicodeString(&ModuleName, &AS, TRUE);
+
+		PEPROCESS process;
+		PsLookupProcessByProcessId((HANDLE)instructions->pid, &process);
+		ULONG64 base_address64 = NULL;
+		base_address64 = GetModuleBaseX64(process, ModuleName);
+		instructions->base_address = base_address64;
+		RtlFreeUnicodeString(&ModuleName);
+	}
+
+	if (instructions->write != FALSE)
+	{
+		// checking if the address is in a valid memory range
+		if (instructions->address < 0x7FFFFFFFFFFF && instructions->address > 0)
+		{
+			PVOID kernel_buff = ExAllocatePool(NonPagedPool, instructions->size);
+
+			if (!kernel_buff)
+				return STATUS_UNSUCCESSFUL;
+
+			if (!memcpy(kernel_buff, instructions->buffer_adddress, instructions->size))
+				return STATUS_UNSUCCESSFUL;
+
+			PEPROCESS process;
+			PsLookupProcessByProcessId((HANDLE)instructions->pid, &process);
+			WriteKernelMemory((HANDLE)instructions->pid, instructions->address, kernel_buff, instructions->size);
+			ExFreePool(kernel_buff);
+		}
+	}
+
+	if (instructions->read != FALSE)
+	{
+		if (instructions->address < 0x7FFFFFFFFFFF && instructions->address > 0)
+		{
+			ReadKernelMemory((HANDLE)instructions->pid, instructions->address, instructions->output, instructions->size);
+		}
+	}
+
 	return STATUS_SUCCESS;
 }
